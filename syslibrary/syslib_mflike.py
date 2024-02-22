@@ -41,16 +41,13 @@ class Calibration_alm(residual):
     NB: cal built such that calibrated TE_nu1nu2 != TE_nu2nu1
     """
 
-    def eval(self,cal1={'tt':[1.,1.,1.]},cal2={'tt':[1.,1.,1.]},nu=None):
+    def eval(self,cal1={'T':[1.,1.,1.]},cal2={'T':[1.,1.,1.]},nu=None):
         cal=dict()
         for k1 in cal1.keys():
             c1=np.array(cal1[k1])[...,np.newaxis]
             for k2 in cal2.keys():
                 c2=np.array(cal2[k2])
-                if(k1==k2):
-                    cal[k1]=c1*c2
-                else:
-                    cal['te']=c1*c2
+                cal[k1+k2] = c1*c2
 
         self.freq=nu
         dcl=dict()
@@ -59,7 +56,8 @@ class Calibration_alm(residual):
         for i1,f1 in enumerate(self.freq):
             for i2,f2 in enumerate(self.freq):
                 for spec in cal.keys():
-                    dcl[spec,f1,f2] = cal[spec][i1,i2]*self.cl[spec,f1,f2]
+                    if (spec,f1,f2) in self.cl.keys():
+                        dcl[spec,f1,f2] = cal[spec][i1,i2]*self.cl[spec,f1,f2]
 
         return dcl
 
@@ -70,7 +68,7 @@ class Rotation_alm(residual):
     NB: alpha must be in deg
     """
 
-    def eval(self,alpha=1.,nu=None,cls=['tt']):
+    def eval(self,alpha=1.,nu=None):
         self.freq=nu
         #NB must check that len(alpha)==len(freq)
         ca=np.cos(np.deg2rad(2.*np.array(alpha)))
@@ -79,25 +77,45 @@ class Rotation_alm(residual):
 
         for i1,f1 in enumerate(self.freq):
             for i2,f2 in enumerate(self.freq):
-                dcl['te',f1,f2] = ca[i2]*self.cl['te',f1,f2]
-                dcl['ee',f1,f2] = ca[i1]*ca[i2]*self.cl['ee',f1,f2]
-                dcl['tt',f1,f2] = self.cl['tt',f1,f2]
-                if('bb' in cls):
-                    dcl['ee',f1,f2] += sa[i1]*sa[i2]*self.cl['bb',f1,f2]
-                    dcl['bb',f1,f2] = (ca[i1]*ca[i2]*self.cl['bb',f1,f2] +
-                                       sa[i1]*sa[i2]*self.cl['ee',f1,f2])
-                if('eb' in cls):
-                    dcl['ee',f1,f2] += (-ca[i1]*sa[i2]*self.cl['eb',f1,f2] -
-                                        sa[i1]*ca[i2]*self.cl['eb',f2,f1])
-                    dcl['bb',f1,f2] += (sa[i1]*ca[i2]*self.cl['eb',f1,f2] +
-                                        sa[i2]*ca[i1]*self.cl['eb',f2,f1])
-                    dcl['eb',f1,f2] = (ca[i1]*sa[i2]*self.cl['ee',f1,f2] - 
-                                       sa[i1]*ca[i2]*self.cl['bb',f1,f2] +
-                                       ca[i1]*ca[i2]*self.cl['eb',f1,f2] -
-                                       sa[i1]*sa[i2]*self.cl['eb',f2,f1])
-                if('tb' in cls):
-                    dcl['te',f1,f2] += -sa[i2]*self.cl['tb',f1,f2]
-                    dcl['tb',f1,f2] = (sa[i2]*self.cl['te',f1,f2] +
-                                       ca[i2]*self.cl['tb',f1,f2])
+                if ("TE",f1,f2) in self.cl.keys():
+                    dcl['TE',f1,f2] = ca[i2]*self.cl['TE',f1,f2]
+
+                if ("EE",f1,f2) in self.cl.keys():
+                    dcl['EE',f1,f2] = ca[i1]*ca[i2]*self.cl['EE',f1,f2]
+                
+                if ("TT",f1,f2) in self.cl.keys():
+                    dcl['TT',f1,f2] = self.cl['TT',f1,f2]
+                
+                if ("BB",f1,f2) in self.cl.keys() and ("EE",f1,f2) in self.cl.keys():
+                    dcl['EE',f1,f2] += sa[i1]*sa[i2]*self.cl['BB',f1,f2]
+                    dcl['BB',f1,f2] = (ca[i1]*ca[i2]*self.cl['BB',f1,f2] +
+                                       sa[i1]*sa[i2]*self.cl['EE',f1,f2])
+                if ("EB",f1,f2) in self.cl.keys() and ("EE",f1,f2) in self.cl.keys() \
+                        and ("BB",f1,f2) in self.cl.keys():
+                    dcl['EE',f1,f2] += (-ca[i1]*sa[i2]*self.cl['EB',f1,f2] -
+                                        sa[i1]*ca[i2]*self.cl['EB',f2,f1])
+                    dcl['BB',f1,f2] += (sa[i1]*ca[i2]*self.cl['EB',f1,f2] +
+                                        sa[i2]*ca[i1]*self.cl['EB',f2,f1])
+                    dcl['EB',f1,f2] = (ca[i1]*sa[i2]*self.cl['EE',f1,f2] - 
+                                       sa[i1]*ca[i2]*self.cl['BB',f1,f2] +
+                                       ca[i1]*ca[i2]*self.cl['EB',f1,f2] -
+                                       sa[i1]*sa[i2]*self.cl['EB',f2,f1])
+
+                if ("TB",f1,f2) in self.cl.keys() and ("TE",f1,f2) in self.cl.keys():
+                    dcl['TE',f1,f2] += -sa[i2]*self.cl['TB',f1,f2]
+                    dcl['TB',f1,f2] = (sa[i2]*self.cl['TE',f1,f2] +
+                                       ca[i2]*self.cl['TB',f1,f2])
+
+        # filling also the cross spectra if required
+        for f1 in self.freq:
+            for f2 in self.freq:
+                if ("ET",f1,f2) in self.cl.keys():
+                    dcl['ET',f1,f2] = dcl['TE',f2,f1]
+
+                if ("BE",f1,f2) in self.cl.keys():
+                    dcl['BE',f1,f2] = dcl['EB',f2,f1]
+
+                if ("BT",f1,f2) in self.cl.keys():
+                    dcl['BT',f1,f2] = dcl['TB',f2,f1]
 
         return dcl
